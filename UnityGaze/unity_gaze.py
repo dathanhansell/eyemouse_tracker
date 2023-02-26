@@ -14,7 +14,19 @@ class GazeEstimation(object):
     It provides useful information like the position of the eyes
     and pupils and allows to know if the eyes are open or closed
     """
-
+    
+    # _predictor is used to get facial landmarks of a given face
+    #cwd = os.path.abspath(os.path.dirname(__file__))
+    if getattr(sys, 'frozen', False):
+            cwd = os.path.dirname(sys.executable)
+    elif __file__: 
+            cwd = os.path.dirname(__file__)
+    model_path = os.path.abspath(os.path.join(cwd, "trained_models/shape_predictor_68_face_landmarks.dat"))
+    cas_path = os.path.abspath(os.path.join(cwd, "trained_models/haarcascade_frontalface_default.xml"))
+    print("loading model")
+    _face_cascade = cv2.CascadeClassifier(cas_path)
+    _predictor = dlib.shape_predictor(model_path)
+        
     def __init__(self):
 
         self.frame = None
@@ -24,16 +36,7 @@ class GazeEstimation(object):
         self.calibration = Calibration()
 
         # _face_detector is used to detect faces
-        self._face_detector = dlib.get_frontal_face_detector()
-
-        # _predictor is used to get facial landmarks of a given face
-        #cwd = os.path.abspath(os.path.dirname(__file__))
-        if getattr(sys, 'frozen', False):
-                cwd = os.path.dirname(sys.executable)
-        elif __file__: 
-                cwd = os.path.dirname(__file__)
-        model_path = os.path.abspath(os.path.join(cwd, "trained_models/shape_predictor_68_face_landmarks.dat"))
-        self._predictor = dlib.shape_predictor(model_path)
+        
 
     @property
     def pupils_located(self):
@@ -58,12 +61,16 @@ class GazeEstimation(object):
         """Detects the face and initialize Eye objects"""
         
         frame = cv2.cvtColor(self.frame, cv2.COLOR_BGR2GRAY)
-        faces = self._face_detector(frame)
-
+        faces = self._face_cascade.detectMultiScale(frame, scaleFactor=1.3, minNeighbors=5)
+        
         try:
+            x, y, w, h = faces[0]
 
-            landmarks = self._predictor(frame, faces[0])
-
+            # Create a dlib rectangle for the face
+            face_rect = dlib.rectangle(x, y, x+w, y+h)
+            
+            landmarks = self._predictor(frame, face_rect)
+            
             left_x1 = landmarks.part(36).x
             left_x2 = landmarks.part(39).x
             left_y1 = landmarks.part(37).y
@@ -81,7 +88,6 @@ class GazeEstimation(object):
 
             self.eye_left = Eye(frame, landmarks, 0, self.calibration)
             self.eye_right = Eye(frame, landmarks, 1, self.calibration)
-
         except IndexError:
 
             self.eye_left = None
@@ -201,6 +207,9 @@ class GazeEstimation(object):
             
             cv2.line(frame, (x_right - 1, y_right), (x_right + 1, y_right), color)
             cv2.line(frame, (x_right, y_right - 1), (x_right, y_right + 1), color)
+
+            cv2.ellipse(frame, (x_left , y_left), (10, 10),0, 0, 360, (255, 0, 255), 5)
+            cv2.ellipse(frame, (x_right, y_right), (10, 10),0, 0, 360, (355, 0, 255), 5)
 
         return frame
 
