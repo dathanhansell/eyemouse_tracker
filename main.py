@@ -3,6 +3,7 @@
 #Github: https://github.com/souravrs999
 
 #General Imports
+import threading
 import cv2
 import time
 import socket
@@ -24,7 +25,8 @@ def get_screen_res():
     return screen_width, screen_height
 
 def get_gaze_coords(cam_frame):
-
+    p_x_2_bbox_w_r = None 
+    p_y_2_bbox_h_r = None
     left_pupil = gaze.pupil_left_coords()
     right_pupil = gaze.pupil_right_coords()
     coord_coll = gaze.eye_roi_bb()
@@ -90,70 +92,95 @@ def get_gaze_coords(cam_frame):
                 return p_x_2_bbox_w_r, p_y_2_bbox_h_r
             else:
                 return None
+lock = threading.Lock()
+class WorkerThread(threading.Thread):
+    
+    def __init__(self, threadID, name, cam, gaze, sock, sc_width, sc_height):
+        threading.Thread.__init__(self)
+        self.threadID = threadID
+        self.name = name
+        self.cam = cam
+        self.gaze = gaze
+        self.sock = sock
+        self.sc_width = sc_width
+        self.sc_height = sc_height
+        
+    def run(self):
+        
+        while True:
+            
+            # Get a frame from the webcam
+            frame = self.cam.read()
+            self.gaze.refresh(frame)
+            # Get the gaze coordinates
+            p_xy = get_gaze_coords(frame)
+            
+            if p_xy is not None:
+
+                # Estimate the screen coordinates
+                if p_xy[0] != 0 and p_xy[1] != 0:
+                    est_x = int((self.sc_width/p_xy[0]))
+                    est_y = int((self.sc_height/p_xy[1]))
+                else:
+                    continue
+
+                # Wait for half a second and check for blinking
+                #time.sleep(0.5)
+                if self.gaze.is_blinking:
+                    blink = 1
+                else:
+                    blink = 0
+
+                # Create the gaze coordinates packet
+                gaze_coord = [est_x, est_y, blink]
+                packet = ','.join(map(str, gaze_coord))
+
+                # Use the lock to synchronize access to the shared variable
+                with lock:
+                    while True:
+                        
+                        print("trying")
+                        self.sock.sendall(packet.encode("UTF-8"))
+                        break
+
+
+            frame = self.gaze.annotated_frame()
+
+            cv2.namedWindow('Demo',cv2.WINDOW_NORMAL)
+            cv2.imshow("Demo", frame)
+
+            if cv2.waitKey(1) == 27:
+                break
 
 if __name__ == "__main__":
 
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    host, port = "127.0.0.1", 25001
+
+    # Get the screen resolution
+    sc_width, sc_height = get_screen_res()
+
+    # Create the webcam and gaze estimation objects
+    cam = WebcamVideoStream(0).start()
     gaze = GazeEstimation()
 
-    ''' Monitor resolution '''
-    sc_width, sc_height = get_screen_res()
-    cam = WebcamVideoStream(0).start()
-    host, port = "127.0.0.1", 25001
-    connection_lost = False
-
+    # Try to connect to the server and retry every second if connection is refused
     while True:
-        
-        if connection_lost:
-            # Wait for reconnection
-            print("Connection lost. Waiting for reconnection...")
-            while True:
-                try:
-                    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                    sock.connect((host, port))
-                    connection_lost = False
-                    print("Reconnected successfully.")
-                    break
-                except:
-                    time.sleep(1)
-        
-        frame = cam.read()
-        gaze.refresh(frame)
-
-        p_xy = get_gaze_coords(frame)
-
-        if p_xy is not None:
-
-            ''' Estimating coordinates for the screen
-            with respect to its resolution '''
-
-            est_x = int((sc_width/p_xy[0]))
-            est_y = int((sc_height/p_xy[1]))
-
-            time.sleep(0.5)
-
-            if gaze.is_blinking:
-                blink = 1
-
-            else:
-                blink = 0
-
-            gaze_coord = [est_x, est_y, blink]
-
-            packet = ','.join(map(str, gaze_coord))
-
-            try:
-                sock.sendall(packet.encode("UTF-8")) 
-            except:
-                connection_lost = True
-                print("Connection lost.")
-
-        frame = gaze.annotated_frame()
-
-        cv2.namedWindow('Demo',cv2.WINDOW_NORMAL)
-        cv2.imshow("Demo", frame)
-
-        if cv2.waitKey(1) == 27:
+        try:
+            print("trying")
+            sock.connect((host, port))
             break
+        except (ConnectionRefusedError,ConnectionResetError,ConnectionAbortedError):
+            print("Connection refused. Retrying in 1 second...")
+            time.sleep(1)
 
+    # Create and start the worker thread
+    worker_thread = WorkerThread(1, "WorkerThread", cam, gaze, sock, sc_width, sc_height)
+    worker_thread.start()
+
+    # Wait for the worker thread to finish
+    worker_thread.join()
+
+    # Stop the webcam and close all windows
     cam.stop()
     cv2.destroyAllWindows()
