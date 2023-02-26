@@ -63,8 +63,9 @@ class GazeEstimation(object):
         
         frame = cv2.cvtColor(self.frame, cv2.COLOR_BGR2GRAY)
         try:
-            faces = self._face_cascade.detectMultiScale(frame, scaleFactor=1.3, minNeighbors=5)
+            faces = self._face_cascade.detectMultiScale(frame, scaleFactor=2, minNeighbors=5)
             x, y, w, h = faces[0]
+            print("haar")
         except IndexError:
             # OpenCV face detector failed, try using dlib's HOG detector
             faces = self._hog_detector(frame, 0)
@@ -72,38 +73,35 @@ class GazeEstimation(object):
                 # No faces detected by dlib's HOG detector either, give up
                 self.eye_left = None
                 self.eye_right = None
+
                 return
             x, y, w, h = faces[0].left(), faces[0].top(), faces[0].right()-faces[0].left(), faces[0].bottom()-faces[0].top()
-        
-        try:
+            print("hog")
 
+        face_rect = dlib.rectangle(x, y, x+w, y+h)
 
-            # Create a dlib rectangle for the face
-            face_rect = dlib.rectangle(x, y, x+w, y+h)
+        landmarks = self._predictor(frame, face_rect)
             
-            landmarks = self._predictor(frame, face_rect)
+        left_x1 = landmarks.part(36).x
+        left_x2 = landmarks.part(39).x
+        left_y1 = landmarks.part(37).y
+        left_y2 = landmarks.part(40).y
+
+        right_x1 = landmarks.part(42).x
+        right_x2 = landmarks.part(45).x
+        right_y1 = landmarks.part(44).y
+        right_y2 = landmarks.part(47).y
+
+        left_eye_bbox_coords = [left_x1, left_x2, left_y1, left_y2]
+        right_eye_bbox_coordds = [right_x1, right_x2, right_y1, right_y2]
             
-            left_x1 = landmarks.part(36).x
-            left_x2 = landmarks.part(39).x
-            left_y1 = landmarks.part(37).y
-            left_y2 = landmarks.part(40).y
+            
 
-            right_x1 = landmarks.part(42).x
-            right_x2 = landmarks.part(45).x
-            right_y1 = landmarks.part(44).y
-            right_y2 = landmarks.part(47).y
+        self.coords_arr = (left_eye_bbox_coords, right_eye_bbox_coordds)
 
-            left_eye_bbox_coords = [left_x1, left_x2, left_y1, left_y2]
-            right_eye_bbox_coordds = [right_x1, right_x2, right_y1, right_y2]
+        self.eye_left = Eye(frame, landmarks, 0, self.calibration)
+        self.eye_right = Eye(frame, landmarks, 1, self.calibration)
 
-            self.coords_arr = (left_eye_bbox_coords, right_eye_bbox_coordds)
-
-            self.eye_left = Eye(frame, landmarks, 0, self.calibration)
-            self.eye_right = Eye(frame, landmarks, 1, self.calibration)
-        except IndexError:
-
-            self.eye_left = None
-            self.eye_right = None
 
     def refresh(self, frame):
 
