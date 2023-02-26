@@ -138,10 +138,20 @@ class WorkerThread(threading.Thread):
                 # Use the lock to synchronize access to the shared variable
                 with lock:
                     while True:
-                        
-                        print("trying")
-                        self.sock.sendall(packet.encode("UTF-8"))
-                        break
+                        try:
+                            # Try to send the packet to the server
+                            self.sock.sendall(packet.encode("UTF-8"))
+                            break
+                        except (ConnectionResetError, ConnectionAbortedError):
+                            # If the connection is reset or aborted, close the socket and retry the connection in 1 second
+                            self.sock.close()
+                            print("Connection reset or aborted. Retrying in 1 second...")
+                            time.sleep(1)
+                            self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                            try:
+                                self.sock.connect((host, port))
+                            except (ConnectionRefusedError, ConnectionResetError, ConnectionAbortedError):
+                                pass
 
 
             frame = self.gaze.annotated_frame()
@@ -167,7 +177,6 @@ if __name__ == "__main__":
     # Try to connect to the server and retry every second if connection is refused
     while True:
         try:
-            print("trying")
             sock.connect((host, port))
             break
         except (ConnectionRefusedError,ConnectionResetError,ConnectionAbortedError):

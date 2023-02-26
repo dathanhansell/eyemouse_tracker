@@ -10808,3 +10808,4 @@ UnityGaze/__pycache__/unity_gaze.cpython-39.pyc.meta
 UnityGaze/__pycache__/VideoCapture.cpython-39.pyc
 UnityGaze/__pycache__/VideoCapture.cpython-39.pyc.meta
 main.spec
+dist/main.exe

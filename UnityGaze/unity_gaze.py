@@ -26,6 +26,7 @@ class GazeEstimation(object):
     print("loading model")
     _face_cascade = cv2.CascadeClassifier(cas_path)
     _predictor = dlib.shape_predictor(model_path)
+    _hog_detector = dlib.get_frontal_face_detector()
         
     def __init__(self):
 
@@ -61,10 +62,21 @@ class GazeEstimation(object):
         """Detects the face and initialize Eye objects"""
         
         frame = cv2.cvtColor(self.frame, cv2.COLOR_BGR2GRAY)
-        faces = self._face_cascade.detectMultiScale(frame, scaleFactor=1.3, minNeighbors=5)
+        try:
+            faces = self._face_cascade.detectMultiScale(frame, scaleFactor=1.3, minNeighbors=5)
+            x, y, w, h = faces[0]
+        except IndexError:
+            # OpenCV face detector failed, try using dlib's HOG detector
+            faces = self._hog_detector(frame, 0)
+            if len(faces) == 0:
+                # No faces detected by dlib's HOG detector either, give up
+                self.eye_left = None
+                self.eye_right = None
+                return
+            x, y, w, h = faces[0].left(), faces[0].top(), faces[0].right()-faces[0].left(), faces[0].bottom()-faces[0].top()
         
         try:
-            x, y, w, h = faces[0]
+
 
             # Create a dlib rectangle for the face
             face_rect = dlib.rectangle(x, y, x+w, y+h)
